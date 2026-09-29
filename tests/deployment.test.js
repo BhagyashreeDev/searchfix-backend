@@ -13,11 +13,12 @@ import { backendURL } from "../extension/core.js";
 
 const key = `AQ.TEST_RENDER_ONLY.${"aB0_-".repeat(70)}`;
 
-test("Render binds PORT on all interfaces and refuses an unconfigured public service", () => {
+test("Render binds PORT on all interfaces without requiring pre-configured key hashes", () => {
   assert.deepEqual(runtimeConfig({}), { hosted: false, host: "127.0.0.1", port: 3000 });
-  assert.throws(() => runtimeConfig({ RENDER: "true", PORT: "10000" }), /ALLOWED_GEMINI_KEY_HASHES/);
+  assert.deepEqual(runtimeConfig({ RENDER: "true", PORT: "10000" }), { hosted: true, host: "0.0.0.0", port: 10000 });
   assert.deepEqual(runtimeConfig({ RENDER: "true", PORT: "10000", ALLOWED_GEMINI_KEY_HASHES: hashGeminiKey(key) }),
     { hosted: true, host: "0.0.0.0", port: 10000 });
+  assert.throws(() => runtimeConfig({ ALLOWED_GEMINI_KEY_HASHES: "invalid_hash" }), /ALLOWED_GEMINI_KEY_HASHES contains invalid/);
 });
 
 test("hosted extension configuration grants only the selected HTTPS backend", () => {
@@ -61,6 +62,10 @@ test("hosted HTTP requests require an approved supplied key, expose the key-sour
     assert.equal(validations, 1);
     const preflight = await fetch(`${root}/api/searchfix/validate-key`, { method: "OPTIONS", headers: { Origin: origin, "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "X-SearchFix-Gemini-Key,Content-Type" } });
     assert.equal(preflight.status, 204);
+    // When ALLOWED_GEMINI_KEY_HASHES is not set, any user key from the extension is accepted
+    delete process.env.ALLOWED_GEMINI_KEY_HASHES;
+    const acceptedAnyUserKey = await call({ "X-SearchFix-Gemini-Key": "TEST_OTHER_KEY_12345678901234567890", Origin: origin });
+    assert.equal(acceptedAnyUserKey.status, 200);
   } finally {
     await new Promise(resolve => server.close(resolve)); geminiService.validateKey = original;
     for (const [name, value] of Object.entries(oldEnv)) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
